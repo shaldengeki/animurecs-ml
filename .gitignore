@@ -1,0 +1,9 @@
+*.sublime-project
+*.sublime-workspace
+Thumbs.db
+.vagrant
+Vagrantfile
+bootstrap.sh
+vagrant_setup
+.idea
+config.txt
