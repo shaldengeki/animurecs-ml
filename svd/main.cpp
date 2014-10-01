@@ -81,6 +81,7 @@ void loadWeights(SVD* svd, Connection& db, std::string weights_table, std::strin
   float min_weight = svd->MinWeight(), max_weight = svd->MaxWeight();
 
   // load the training data row by row.
+  // TODO: alter query to get unique latest list for each user.
   try {
     Query weights_query = db.query();
     weights_query << "SELECT COUNT(*) FROM " << weights_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
@@ -122,6 +123,7 @@ void loadWeights(SVD* svd, Connection& db, std::string weights_table, std::strin
 
 void loadTests(SVD* svd, Connection& db, std::string test_table, std::string item_id_col) {
   // Loads all of the weights in the test table.
+  // TODO: auto-partition baseline into baseline/test sets, making this unnecessary.
   cout << "Loading test data." << endl;
 
   unsigned int i = 0, user_id = 0, item_id = 0, TestCount = 0;
@@ -167,7 +169,6 @@ void loadTests(SVD* svd, Connection& db, std::string test_table, std::string ite
   }
   cout << "Finished loading test data: " << TestCount << " weights." << endl;
 }
-
 
 void saveModel(SVD* svd, Connection& db, std::string global_table, std::string means_table, std::string feature_table, std::string item_type) {
   // saves the SVD's features to output tables.

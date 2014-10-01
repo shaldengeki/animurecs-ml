@@ -333,7 +333,7 @@ void SVD::Train(bool calculate_metrics) {
   for (feature = 0; feature < features_count; feature++) {
     // cout << "Feature: " << feature << " | Epoch: " << epoch << " | min_epochs: " << min_epochs << " | rmse: " << rmse << " | lastRMSE: " << lastRmse << " | min_improvement: " << min_improvement << endl;
     // Once the RMSE improvement is less than our min threshold and we're past the minimum number of epochs, move on to the next feature.
-    for (epoch = 0;  (epoch < min_epochs) || (rmse <= lastRmse - min_improvement) || (epoch > max_epochs); epoch++) {
+    for (epoch = 0;  (epoch < max_epochs) && ((epoch < min_epochs) || (rmse <= lastRmse - min_improvement)); epoch++) {
       // StartBenchmark("Epoch"");
       totalSquareError = 0;
       lastRmse = rmse;
