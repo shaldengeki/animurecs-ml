@@ -28,17 +28,16 @@ void loadBaseline(SVD* svd, Connection& db, std::string baseline_table, std::str
   UseQueryResult weights_itr;
   Row weight_row;
 
-  std::string item_type = svd->ItemType();
   float min_weight = svd->MinWeight(), max_weight = svd->MaxWeight();
 
   // load the training data row by row.
   try {
     Query weights_query = db.query();
-    weights_query << "SELECT COUNT(*) FROM " << baseline_table << " WHERE type = " << quote << item_type;
+    weights_query << "SELECT COUNT(*) FROM " << baseline_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
     baseline_count = (unsigned int) atoi(weights_query.store()[0]["COUNT(*)"]);
     cout << "Found " << baseline_count << " weights." << endl;
     weights_query.reset();
-    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << baseline_table << " WHERE type = " << quote << item_type << " ORDER BY user_id ASC, " << item_id_col << " ASC";
+    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << baseline_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight << " ORDER BY user_id ASC, " << item_id_col << " ASC";
     weights_itr = weights_query.use();
   } catch (BadQuery er) {
     cerr << "Error loading baseline weights." << endl;
@@ -56,14 +55,16 @@ void loadBaseline(SVD* svd, Connection& db, std::string baseline_table, std::str
       cout << "user id not in fields for row " << i << "." << endl;
       break;
     }
-    item_id = (unsigned int) strtoul(weight_row[item_id_col].c_str(), NULL, 0);
+    item_id = (unsigned int) strtoul(weight_row[item_id_col.c_str()].c_str(), NULL, 0);
     weight = atof(weight_row["score"]);
 
     // If weight exceeds our boundaries, throw an exception.
     if (weight < min_weight || weight > max_weight) {
-      throw std::out_of_range("Weight in baseline table exceeds specified bounds: " + weight_row["score"]);
+      std::ostringstream error_text;
+      error_text << "Weight in baseline table exceeds specified bounds: " << weight_row["score"] << " ~> " << weight;
+      throw std::out_of_range(error_text.str());
     }
-    svd->LoadRow(user_id, item_id, weight, true, false);
+    svd->LoadBaselineRow(user_id, item_id, weight);
   }
   cout << "Finished loading baseline data: " << baseline_count << " weights." << endl;
 }
@@ -77,17 +78,16 @@ void loadWeights(SVD* svd, Connection& db, std::string weights_table, std::strin
   UseQueryResult weights_itr;
   Row weight_row;
 
-  std::string item_type = svd->ItemType();
   float min_weight = svd->MinWeight(), max_weight = svd->MaxWeight();
 
   // load the training data row by row.
   try {
     Query weights_query = db.query();
-    weights_query << "SELECT COUNT(*) FROM " << weights_table << " WHERE type = " << quote << item_type;
+    weights_query << "SELECT COUNT(*) FROM " << weights_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
     WeightsCount = (unsigned int) atoi(weights_query.store()[0]["COUNT(*)"]);
     cout << "Found " << WeightsCount << " weights." << endl;
     weights_query.reset();
-    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << weights_table << " WHERE type = " << quote << item_type << " ORDER BY user_id ASC, " << item_id_col << " ASC";
+    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << weights_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight << " ORDER BY user_id ASC, " << item_id_col << " ASC";
     weights_itr = weights_query.use();
   } catch (BadQuery er) {
     cerr << "Error loading weights." << endl;
@@ -105,14 +105,16 @@ void loadWeights(SVD* svd, Connection& db, std::string weights_table, std::strin
       cout << "user id not in fields for row " << i << "." << endl;
       break;
     }
-    item_id = (unsigned int) strtoul(weight_row[item_id_col].c_str(), NULL, 0);
+    item_id = (unsigned int) strtoul(weight_row[item_id_col.c_str()].c_str(), NULL, 0);
     weight = atof(weight_row["score"]);
 
     // If weight exceeds our boundaries, throw an exception.
     if (weight < min_weight || weight > max_weight) {
-      throw std::out_of_range("Weight in weights table exceeds specified bounds: " + weight_row["score"]);
+      std::ostringstream error_text;
+      error_text << "Weight in training table exceeds specified bounds: " << weight_row["score"] << " ~> " << weight;
+      throw std::out_of_range(error_text.str());
     }
-    svd->LoadRow(user_id, item_id, weight, false, false);
+    svd->LoadWeightRow(user_id, item_id, weight);
   }
 
   cout << "Finished loading training weight data: " << WeightsCount << " weights." << endl;
@@ -127,17 +129,16 @@ void loadTests(SVD* svd, Connection& db, std::string test_table, std::string ite
   UseQueryResult weights_itr;
   Row weight_row;
 
-  std::string item_type = svd->ItemType();
   float min_weight = svd->MinWeight(), max_weight = svd->MaxWeight();
 
   // load the test data row by row.
   try {
     Query weights_query = db.query();
-    weights_query << "SELECT COUNT(*) FROM " << test_table << " WHERE type = " << quote << item_type;
+    weights_query << "SELECT COUNT(*) FROM " << test_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
     TestCount = (unsigned int) atoi(weights_query.store()[0]["COUNT(*)"]);
     cout << "Found " << TestCount << " weights." << endl;
     weights_query.reset();
-    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << test_table << " WHERE type = " << quote << item_type << " ORDER BY user_id ASC, " << item_id_col << " ASC";
+    weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << test_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight << " ORDER BY user_id ASC, " << item_id_col << " ASC";
     weights_itr = weights_query.use();
   } catch (BadQuery er) {
     cerr << "Error loading test weights." << endl;
@@ -154,19 +155,21 @@ void loadTests(SVD* svd, Connection& db, std::string test_table, std::string ite
       cout << "user_id not in fields for row " << i << endl;
       break;
     }
-    item_id = (unsigned int) strtoul(weight_row[item_id_col].c_str(), NULL, 0);
+    item_id = (unsigned int) strtoul(weight_row[item_id_col.c_str()].c_str(), NULL, 0);
     weight = atof(weight_row["score"]);
     // If weight exceeds our boundaries, throw an exception.
     if (weight < min_weight || weight > max_weight) {
-      throw std::out_of_range("Weight in testing table exceeds specified bounds: " + weight_row["score"]);
+      std::ostringstream error_text;
+      error_text << "Weight in testing table exceeds specified bounds: " << weight_row["score"] << " ~> " << weight;
+      throw std::out_of_range(error_text.str());
     }
-    svd->LoadRow(user_id, item_id, weight, false, true);
+    svd->LoadTestRow(user_id, item_id, weight);
   }
   cout << "Finished loading test data: " << TestCount << " weights." << endl;
 }
 
 
-void saveModel(SVD* svd, Connection& db, std::string global_table, std::string means_table, std::string feature_table) {
+void saveModel(SVD* svd, Connection& db, std::string global_table, std::string means_table, std::string feature_table, std::string item_type) {
   // saves the SVD's features to output tables.
   // saves global mean for this entity pair to global_table,
   // each entity's paired global mean to means_table,
@@ -178,7 +181,6 @@ void saveModel(SVD* svd, Connection& db, std::string global_table, std::string m
 
   IdMap UserIDs = svd->UserIDs();
   vector<User> Users = svd->Users();
-  std::string item_type = svd->ItemType();
   unsigned int Features = svd->FeaturesCount();
   vector<unsigned int> SelectedItems = svd->SelectedItems();
   vector<Item> Items = svd->Items();
@@ -219,10 +221,10 @@ void saveModel(SVD* svd, Connection& db, std::string global_table, std::string m
   // }
 
   try {
-    deleteFeaturesQuery << "DELETE FROM " << feature_table << " WHERE type=" << item_type;
+    deleteFeaturesQuery << "DELETE FROM " << feature_table;
     deleteFeaturesQuery.execute();
-    deleteFeaturesQuery << "DELETE FROM " << feature_table << " WHERE type='user'";
-    deleteFeaturesQuery.execute();
+    // deleteFeaturesQuery << "DELETE FROM " << feature_table << " WHERE type='user'";
+    // deleteFeaturesQuery.execute();
   } catch (BadQuery er) {
     cerr << "Error deleting entity and user features." << endl;
     throw er;
@@ -288,13 +290,13 @@ int main(int argc, char* argv[]) {
     ("password", options::value<std::string>()->default_value(""), "MySQL password")
     ("database", options::value<std::string>()->default_value("animurecs"), "MySQL database")
     ("baseline_table", options::value<std::string>(), "table with baseline training data")
-    ("weights_table", options::value<std::string>(), "weights table with entities for whom you want features to be outputted")
+    ("weight_table", options::value<std::string>(), "weights table with entities for whom you want features to be outputted")
     ("means_table", options::value<std::string>()->default_value("entity_stats"), "table with entity means")
     ("test_table", options::value<std::string>(), "table with test data")
     ("item_id_col", options::value<std::string>(), "column name in tables containing entity IDs")
     ("min_weight", options::value<float>()->default_value(1), "lower floor on weight values in tables")
     ("max_weight", options::value<float>()->default_value(10), "upper ceiling on weight values in tables")
-    ("type", options::value<std::string>(), "entity type to calculate features for")
+    ("type", options::value<std::string>(), "entity type to calculate and output features for")
   ;
   options::options_description svdOptions("SVD options");
   svdOptions.add_options()
@@ -329,24 +331,24 @@ int main(int argc, char* argv[]) {
     }
 
     // perform SVD on weights matrix.
-    SVD* svd = new SVD(vm["type"].as<std::string>(), vm["features"].as<int>(), vm["min_epochs"].as<int>(), vm["max_epochs"].as<int>(), vm["min_improvement"].as<float>(), vm["l_rate"].as<float>(), vm["tikhonov"].as<float>(), vm["f_init"].as<float>(), vm["num_priors"].as<int>(), vm["min_weights"].as<int>(), vm["min_weight"].as<float>(), vm["max_weight"].as<float>());
+    SVD* svd = new SVD(vm["features"].as<int>(), vm["min_epochs"].as<int>(), vm["max_epochs"].as<int>(), vm["min_improvement"].as<float>(), vm["l_rate"].as<float>(), vm["tikhonov"].as<float>(), vm["f_init"].as<float>(), vm["num_priors"].as<int>(), vm["min_weights"].as<int>(), vm["min_weight"].as<float>(), vm["max_weight"].as<float>());
     if (vm.count("baseline_table")) {
       loadBaseline(svd, database, vm["baseline_table"].as<std::string>(), vm["item_id_col"].as<std::string>());
     }
-    if (vm.count("weights_table")) {
-      loadWeights(svd, database, vm["weights_table"].as<std::string>(), vm["item_id_col"].as<std::string>());
+    if (vm.count("weight_table")) {
+      loadWeights(svd, database, vm["weight_table"].as<std::string>(), vm["item_id_col"].as<std::string>());
     }
     if (vm.count("test_table")) {
       loadTests(svd, database, vm["test_table"].as<std::string>(), vm["item_id_col"].as<std::string>());
     }
-    svd->CalcMetrics();
-    //svd->NormalizeWeights();
-    svd->CalcFeatures();
+
+    svd->Train();
+
     if (vm.count("test_table")) {
-      svd->RunTest();
+      cout << "Final RMSE: " << svd->TestRMSE() << endl;
     }
     if (vm.count("feature_table")) {
-      saveModel(svd, database, vm["global_table"].as<std::string>(), vm["means_table"].as<std::string>(), vm["feature_table"].as<std::string>());
+      saveModel(svd, database, vm["global_table"].as<std::string>(), vm["means_table"].as<std::string>(), vm["feature_table"].as<std::string>(), vm["type"].as<std::string>());
     }
     svd->PrintTimings();
     svd->PrintBenchmarks();

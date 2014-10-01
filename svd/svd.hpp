@@ -52,7 +52,6 @@ struct User : Item {
 class SVD {
   // Class to perform Simon Funk-style singular value decomposition on a table of weights.
   private:
-    std::string                        item_type;
 
     unsigned int                       total_weights;
     unsigned int                       baseline_count;
@@ -89,11 +88,13 @@ class SVD {
     BenchMap                           benchmarks;        // Durations for blocks of code.
     std::map<string, clock_t>          benchmark_starts;
 
+    void                               LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool baseline = false, bool test = false);
+
     inline float                       ClipWeight(float weight);
     inline float                       PredictWeight(unsigned int item_id, unsigned int user_id, unsigned int feature, float cache, bool trailing);
 
   public:
-    SVD(std::string type, unsigned int features, unsigned int min_epochs, unsigned int max_epochs, float min_improvement, float l_rate, float tikhonov, float f_init, unsigned int num_priors, unsigned int min_weights, float min_weight, float max_weight);
+    SVD(unsigned int features, unsigned int min_epochs, unsigned int max_epochs, float min_improvement, float l_rate, float tikhonov, float f_init, unsigned int num_priors, unsigned int min_weights, float min_weight, float max_weight);
     ~SVD(void) { };
     inline void                        AddTiming(std::string description);
     void                               PrintTimings();
@@ -103,16 +104,27 @@ class SVD {
     void                               PrintBenchmarks();
 
     void                               LoadCSV(std::string filename, bool baseline = false, bool test = false);
-    void                               LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool baseline = false, bool test = false);
 
+    // convenience alias methods for LoadRow.
+    void                               LoadBaselineRow(unsigned int user_id, unsigned int item_id, float weight);
+    void                               LoadWeightRow(unsigned int user_id, unsigned int item_id, float weight);
+    void                               LoadTestRow(unsigned int user_id, unsigned int item_id, float weight);
+
+    // calculates global, user-, and item- wide statistics e.g. means, variances, and offsets from global mean.
     void                               CalcMetrics();
-    void                               NormalizeWeights(bool deviation = true);
-    void                               CalcFeatures();
-    void                               RunTest();
 
+    // transforms all weights so that mean is zero, and, if deviation=true, variance is 1.
+    void                               NormalizeWeights(bool deviation = true);
+
+    // runs SVD and computes features.
+    void                               Train(bool calculate_metrics = true);
+
+    // calculates test RMSE with SVD's current features.
+    float                              TestRMSE();
+
+    // returns predicted score for given item and user, using computed features.
     inline float                       PredictWeight(unsigned int item_id, unsigned int user_id);
 
-    std::string                        ItemType();
     float                              MinWeight();
     float                              MaxWeight();
     unsigned int                       FeaturesCount();
