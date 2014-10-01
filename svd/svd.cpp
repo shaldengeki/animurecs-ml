@@ -308,9 +308,9 @@ void SVD::NormalizeWeights(bool deviation) {
   for (i = 0; i < total_weights; i++) {
     if (users[weights[i].user_id].weights_count > 0 && items[weights[i].item_id].weights_count > 0) {
       weights[i].weight -= users[weights[i].user_id].offset + items[weights[i].item_id].offset;
-      if (deviation) {
-        weights[i].weight /= users[weights[i].user_id].deviation * items[weights[i].item_id].deviation;
-      }
+      // if (deviation) {
+      //   weights[i].weight /= users[weights[i].user_id].deviation * items[weights[i].item_id].deviation;
+      // }
     }
   }
   cout << "Finished normalizing weights." << endl;
@@ -327,14 +327,18 @@ void SVD::Train(bool calculate_metrics) {
   AddTiming("Features init");
   cout << "Calculating SVD features..." << endl;
   unsigned int feature = 0, epoch = 0, total_epochs = 0, user_id = 0, item_id = 0, i = 0, selectedWeights = 0;
-  float err = 0, oldUserFeature = 0, oldItemFeature = 0, totalSquareError = 0, lastRmse = 0, rmse = 2.0, test_rmse = 0;
+  float err = 0, oldUserFeature = 0, oldItemFeature = 0, totalSquareError = 0, lastRmse = 0, rmse = 2.0, test_rmse = 2.0, feature_rmse_start = 0;
   bool runTests = test_weights.size() > 0;
 
+  // TODO: uncomment this when auto-test partition is done.
+  // test_rmse = TestRMSE();
+
   for (feature = 0; feature < features_count; feature++) {
+    feature_rmse_start = test_rmse;
     // cout << "Feature: " << feature << " | Epoch: " << epoch << " | min_epochs: " << min_epochs << " | rmse: " << rmse << " | lastRMSE: " << lastRmse << " | min_improvement: " << min_improvement << endl;
     // Once the RMSE improvement is less than our min threshold and we're past the minimum number of epochs, move on to the next feature.
     for (epoch = 0;  (epoch < max_epochs) && ((epoch < min_epochs) || (rmse <= lastRmse - min_improvement)); epoch++) {
-      // StartBenchmark("Epoch"");
+      // StartBenchmark("Epoch");
       totalSquareError = 0;
       lastRmse = rmse;
       selectedWeights = 0;
@@ -359,20 +363,22 @@ void SVD::Train(bool calculate_metrics) {
         features_items[feature][item_id] += learn_rate * (err * oldUserFeature - tikhonov * oldItemFeature);
       }
       rmse = sqrt(totalSquareError / selectedWeights);
-      cout << "Epoch: " << total_epochs + epoch << " | Last RMSE: " << lastRmse << " | RMSE: " << rmse << " | Improvement: " << (lastRmse - rmse);
-      test_rmse = TestRMSE();
-      if (!isnan(test_rmse)) {
-        cout << " | Test RMSE: " << test_rmse;
-      }
-      cout << endl;
+      cout << "Feature: " << feature << " | Epoch: " << total_epochs + epoch << " | Last RMSE: " << lastRmse << " | RMSE: " << rmse << " | Improvement: " << (lastRmse - rmse) << endl;
       // EndBenchmark("Epoch"");
     }
     total_epochs += epoch;
+
+    // if test set is available, calculate test RMSE and improvement.
+    test_rmse = TestRMSE();
+    if (!isnan(test_rmse)) {
+      cout << "Test RMSE: " << test_rmse << " | Last test RMSE: " << feature_rmse_start << " | Improvement: " << (feature_rmse_start - test_rmse) << endl;
+      feature_improvements.push_back(feature_rmse_start - test_rmse);
+    }
+
     // Cache the feature contributions so far so we don't have to recompute it for every feature.
     for (i = 0; i < total_weights; i++) {
       weights[i].cache = PredictWeight(weights[i].item_id, weights[i].user_id, feature, weights[i].cache, false);
     }
-    cout << endl;
     AddTiming(std::string("Feature ") + to_string(feature) + std::string(" finish"));
   }
   cout << "Finished calculating SVD features." << endl;

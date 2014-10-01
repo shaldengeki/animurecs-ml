@@ -88,6 +88,8 @@ class SVD {
     BenchMap                           benchmarks;        // Durations for blocks of code.
     std::map<string, clock_t>          benchmark_starts;
 
+    vector<float>                      feature_improvements;  // Amount by which each feature decreased the test RMSE in training.
+
     void                               LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool baseline = false, bool test = false);
 
     inline float                       ClipWeight(float weight);
