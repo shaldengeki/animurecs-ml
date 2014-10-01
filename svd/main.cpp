@@ -301,8 +301,8 @@ int main(int argc, char* argv[]) {
   ;
   options::options_description svdOptions("SVD options");
   svdOptions.add_options()
-    ("global_table", options::value<std::string>()->default_value("global_stats"), "table to store global values (e.g. global weight mean)")
-    ("feature_table", options::value<std::string>()->default_value("entity_features"), "output table for features")
+    ("global_table", options::value<std::string>(), "table to store global values (e.g. global weight mean)")
+    ("feature_table", options::value<std::string>(), "output table for features")
     ("features", options::value<int>()->default_value(50), "number of features")
     ("num_priors", options::value<int>()->default_value(25), "weight of priors in regularizing means")
     ("f_init", options::value<float>()->default_value(0.01), "initial value of features")

@@ -127,6 +127,7 @@ class SVD {
     // returns predicted score for given item and user, using computed features.
     inline float                       PredictWeight(unsigned int item_id, unsigned int user_id);
 
+    // getters for class attributes.
     float                              MinWeight();
     float                              MaxWeight();
     unsigned int                       FeaturesCount();
