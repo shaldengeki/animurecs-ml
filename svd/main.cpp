@@ -35,7 +35,7 @@ void loadBaseline(SVD* svd, Connection& db, std::string baseline_table, std::str
     Query weights_query = db.query();
     weights_query << "SELECT COUNT(*) FROM " << baseline_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
     baseline_count = (unsigned int) atoi(weights_query.store()[0]["COUNT(*)"]);
-    cout << "Found " << baseline_count << " weights." << endl;
+    cout << "Found " << baseline_count << " baseline weights." << endl;
     weights_query.reset();
     weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << baseline_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight << " ORDER BY user_id ASC, " << item_id_col << " ASC";
     weights_itr = weights_query.use();
@@ -138,7 +138,7 @@ void loadTests(SVD* svd, Connection& db, std::string test_table, std::string ite
     Query weights_query = db.query();
     weights_query << "SELECT COUNT(*) FROM " << test_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight;
     TestCount = (unsigned int) atoi(weights_query.store()[0]["COUNT(*)"]);
-    cout << "Found " << TestCount << " weights." << endl;
+    cout << "Found " << TestCount << " test weights." << endl;
     weights_query.reset();
     weights_query << "SELECT user_id, " << item_id_col << ", score FROM " << test_table << " WHERE score BETWEEN " <<  min_weight << " AND " << max_weight << " ORDER BY user_id ASC, " << item_id_col << " ASC";
     weights_itr = weights_query.use();
