@@ -12,7 +12,7 @@
 using namespace std;
 
 typedef map<unsigned int, unsigned int> IdMap;
-typedef IdMap::iterator idMapItr;
+typedef IdMap::iterator IdMapItr;
 
 /* Benchmark and timing datastructures. */
 typedef pair<clock_t, std::string> Timing;
@@ -26,7 +26,7 @@ struct BenchInfo {
 typedef map< std::string, BenchInfo > BenchMap;
 
 /* Main weight data datastructures */
-struct Data {
+struct Weight {
   unsigned int    user_id;
   unsigned int    item_id;
   float           weight;
@@ -39,6 +39,7 @@ struct Item {
   float               weights_sum;
   float               weights_avg;
   float               regularized_avg;
+  float               offset_sum;
   float               deviation_sum;
   float               deviation;
   float               offset;
@@ -48,6 +49,8 @@ struct User : Item {
   // originally this was unique but in order to support SVDs for generic item type pairs, it's been folded into Item.
 };
 
+typedef map<unsigned int, float> WeightMap;
+typedef WeightMap::iterator WeightMapItr;
 
 class SVD {
   // Class to perform Simon Funk-style singular value decomposition on a table of weights.
@@ -72,16 +75,18 @@ class SVD {
     unsigned int                       prior_weight;     // Weight of global average in determining regularized averages
     unsigned int                       min_weights;      // Minimal number of weights in order to calculate features for a user or item.
 
-    vector<Data>                       weights;
-    vector<Data>                       test_weights;
+    vector<Weight>                     weights;
+    vector<Weight>                     test_weights;
 
     IdMap                              user_ids;         // Map: sparse user_id => compact index
     vector<User>                       users;
+    vector<WeightMap>                  user_weights;
     vector< vector<float> >            features_users;
 
     IdMap                              item_ids;          // Map: sparse item_id => compact index
     vector<unsigned int>               selected_items;    // compact itemIDs to output.
     vector<Item>                       items;
+    vector<WeightMap>                  item_weights;
     vector< vector<float> >            features_items;
 
     vector<Timing>                     timings;           // Times at which certain points in the code are reached.
@@ -91,6 +96,7 @@ class SVD {
     vector<float>                      feature_improvements;  // Amount by which each feature decreased the test RMSE in training.
 
     void                               LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool baseline = false, bool test = false);
+    void                               LoadCSV(std::string filename, bool baseline = false, bool test = false);
 
     inline float                       ClipWeight(float weight);
     inline float                       PredictWeight(unsigned int item_id, unsigned int user_id, unsigned int feature, float cache, bool trailing);
@@ -105,12 +111,27 @@ class SVD {
     inline void                        EndBenchmark(std::string name);
     void                               PrintBenchmarks();
 
-    void                               LoadCSV(std::string filename, bool baseline = false, bool test = false);
+    // convenience alias methods for LoadCSV.
+    void                               LoadCSVBaseline(std::string filename);
+    void                               LoadCSVWeights(std::string filename);
+    void                               LoadCSVTest(std::string filename);
 
     // convenience alias methods for LoadRow.
     void                               LoadBaselineRow(unsigned int user_id, unsigned int item_id, float weight);
     void                               LoadWeightRow(unsigned int user_id, unsigned int item_id, float weight);
     void                               LoadTestRow(unsigned int user_id, unsigned int item_id, float weight);
+
+    void                               DeleteWeight(unsigned int user_id, unsigned int item_id);
+
+    // splits currently-loaded weights into train and test sets of size proportionate to test_percent.
+    void                               PartitionWeights(unsigned int test_percent);
+
+    // finds the weight corresponding to the given user-item pair.
+    float                              FindWeight(unsigned int user_id, unsigned int item_id);
+    float                              FindTestWeight(unsigned int user_id, unsigned int item_id);
+
+    WeightMap                          UserWeights(unsigned int user_id);
+    WeightMap                          ItemWeights(unsigned int item_id);
 
     // calculates global, user-, and item- wide statistics e.g. means, variances, and offsets from global mean.
     void                               CalcMetrics();
@@ -140,6 +161,8 @@ class SVD {
     vector<unsigned int>               SelectedItems();
     vector<Item>                       Items();
     vector<float>                      ItemFeatures(unsigned int item_id);
+
+    vector<float>                      FeatureImprovements();
 };
 
 #endif

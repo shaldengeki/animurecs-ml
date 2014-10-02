@@ -232,7 +232,7 @@ void saveModel(SVD* svd, Connection& db, std::string global_table, std::string m
   }
 
   cout << "Saving users..." << endl;
-  for (idMapItr userIterator = UserIDs.begin(); userIterator != UserIDs.end(); ++userIterator) {
+  for (IdMapItr userIterator = UserIDs.begin(); userIterator != UserIDs.end(); ++userIterator) {
     sparseID = userIterator->first;
     compact_id = userIterator->second;
     // update user means.
@@ -294,6 +294,7 @@ int main(int argc, char* argv[]) {
     ("weight_table", options::value<std::string>(), "weights table with entities for whom you want features to be outputted")
     ("means_table", options::value<std::string>()->default_value("entity_stats"), "table with entity means")
     ("test_table", options::value<std::string>(), "table with test data")
+    ("test_percent", options::value<int>(), "percentage of baseline and weight data to partition into a test set. cannot be used in conjunction with test_table.")
     ("item_id_col", options::value<std::string>(), "column name in tables containing entity IDs")
     ("min_weight", options::value<float>()->default_value(1), "lower floor on weight values in tables")
     ("max_weight", options::value<float>()->default_value(10), "upper ceiling on weight values in tables")
@@ -341,6 +342,8 @@ int main(int argc, char* argv[]) {
     }
     if (vm.count("test_table")) {
       loadTests(svd, database, vm["test_table"].as<std::string>(), vm["item_id_col"].as<std::string>());
+    } else if (vm.count("test_percent")) {
+      svd->PartitionWeights(vm["test_percent"].as<int>());
     }
 
     svd->Train();
@@ -353,6 +356,13 @@ int main(int argc, char* argv[]) {
     }
     svd->PrintTimings();
     svd->PrintBenchmarks();
+
+    vector<float> feature_improvements = svd->FeatureImprovements();
+    cout << "Feature improvements:" << endl;
+    cout << "=====================" << endl;
+    for (int f = 0; f < feature_improvements.size(); f++) {
+      cout << f << ": " << feature_improvements[f] << endl;
+    }
   } catch (ConnectionFailed er) {
     cerr << "Could not connect to MySQL database." << endl;
     throw er;

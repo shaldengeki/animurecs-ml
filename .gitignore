@@ -1,6 +1,7 @@
 *.sublime-project
 *.sublime-workspace
 Thumbs.db
+*.log
 .vagrant
 Vagrantfile
 bootstrap.sh

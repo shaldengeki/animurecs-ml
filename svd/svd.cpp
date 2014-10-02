@@ -3,24 +3,24 @@
   SVD class implementation.
 */
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdlib>
-#include <iostream>
 #include <fstream>
+#include <functional>
+#include <iostream>
+#include <locale>
+#include <limits>
+#include <map>
+#include <random>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include <vector>
 #include <string>
 #include <sstream>
-#include <vector>
-#include <limits>
-#include <cmath>
-#include <map>
 #include <time.h>
-#include <algorithm>
-#include <functional>
-#include <cctype>
-#include <locale>
+#include <vector>
 
 #include "utilities.hpp"
 #include "svd.hpp"
@@ -89,7 +89,8 @@ void SVD::LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool
   // loads a weight row into the SVD, given dual sparse IDs and a weight.
   // optionally takes baseline or test as a bool to indicate that this weight should be marked as such.
   // StartBenchmark("LoadRow"");
-  idMapItr user_itr, item_itr;
+  IdMapItr user_itr, item_itr;
+  WeightMap weight_map;
   unsigned int uid = 0, aid = 0;
 
   // initialize a blank user and anime to push.
@@ -107,7 +108,7 @@ void SVD::LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool
   blank_anime.weights_avg = 0;
   blank_anime.regularized_avg = 0;
 
-  Data weight_entry;
+  Weight weight_entry;
   weight_entry.cache = 0;
 
   if (!test) {
@@ -122,6 +123,7 @@ void SVD::LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool
 
       // Push a new user onto users and store the old sparse id for later.
       users.push_back(blank_user);
+      user_weights.push_back(weight_map);
       user_id = uid;
     } else {
         user_id = user_itr->second;
@@ -145,12 +147,15 @@ void SVD::LoadRow(unsigned int user_id, unsigned int item_id, float weight, bool
 
       // Push a new anime onto animus.
       items.push_back(blank_anime);
+      item_weights.push_back(weight_map);
       item_id = aid;
     } else {
       item_id = item_itr->second;
     }
     items[item_id].weights_count++;
     items[item_id].weights_sum += weight;
+
+    user_weights[user_id][item_id] = item_weights[item_id][user_id] = weight;
   }
   weight_entry.weight = weight;
   if (test) {
@@ -187,19 +192,40 @@ void SVD::LoadTestRow(unsigned int user_id, unsigned int item_id, float weight) 
   LoadRow(user_id, item_id, weight, false, true);
 }
 
-void SVD::LoadCSV(string training_file, bool baseline, bool test) {
-  // Loads all of the ratings in the training file.
-  // Data is in the form USERID,ANIMEID,RATING
+void SVD::DeleteWeight(unsigned int user_id, unsigned int item_id) {
+  for (vector<Weight>::iterator weight_itr = weights.begin(); weight_itr != weights.end(); ++weight_itr) {
+    if (weight_itr->user_id == user_id && weight_itr->item_id == item_id) {
+      // adjust per-user and per-item stats to reflect removal of this weight.
+      users[weight_itr->user_id].weights_count--;
+      users[weight_itr->user_id].weights_sum -= weight_itr->weight;
+
+      items[weight_itr->item_id].weights_count--;
+      items[weight_itr->item_id].weights_sum -= weight_itr->weight;
+
+      user_weights[weight_itr->user_id].erase(user_weights[weight_itr->user_id].find(weight_itr->item_id));
+      item_weights[weight_itr->item_id].erase(item_weights[weight_itr->item_id].find(weight_itr->user_id));
+
+      // we don't know where this weight came from, so we have to guess (baseline).
+      baseline_count--;
+
+      weights.erase(weight_itr);
+      return;
+    }
+  }
+}
+
+void SVD::LoadCSV(std::string training_file, bool baseline, bool test) {
+  // Loads all of the ratings in the training CSV file.
+  // csv file is of the form USER_ID,ITEM_ID,WEIGHT
   AddTiming("Load data init");
   cout << "Loading training data..." << endl;
 
   unsigned int user_id = 0, item_id = 0;
   float weight = 0;
 
-  string line;
+  std::string line;
   ifstream data_file;
   // load the csv file line by line.
-  // csv file is of the form USER_ID,ITEM_ID,WEIGHT
   data_file.open(training_file.c_str());
   if (data_file.is_open()) {
     while (!data_file.eof()) {
@@ -221,12 +247,55 @@ void SVD::LoadCSV(string training_file, bool baseline, bool test) {
   AddTiming("Load data finish");
 }
 
+void SVD::LoadCSVBaseline(std::string training_file) {
+  return LoadCSV(training_file, true, false);
+}
+
+void SVD::LoadCSVWeights(std::string training_file) {
+  return LoadCSV(training_file, false, false);
+}
+
+void SVD::LoadCSVTest(std::string training_file) {
+  return LoadCSV(training_file, false, true);
+}
+
+void SVD::PartitionWeights(unsigned int test_percent) {
+  // splits the currently-loaded training weights into training and test sets
+  // test_percent determines the final size of the test set.
+  AddTiming("Partition init");
+  cout << "Partitioning training set into training and validation sets..." << endl;
+  unsigned int training_weights = baseline_count + weights_count, i = 0;
+
+  while ((float) (test_count) / total_weights * 100 < test_percent) {
+    // select a random row from the training set.
+    std::default_random_engine generator;
+    std::uniform_int_distribution<int> distribution(0, training_weights - 1);
+    i = distribution(generator);
+
+    // add it to the test set and remove it from the training set.
+    LoadTestRow(weights[i].user_id, weights[i].item_id, weights[i].weight);
+    DeleteWeight(weights[i].user_id, weights[i].item_id);
+    training_weights--;
+  }
+  cout << "Partition finished. " << test_count << " weights now in validation set." << endl;
+  AddTiming("Partition finish");
+}
+
+WeightMap SVD::UserWeights(unsigned int user_id) {
+  return user_weights[user_id];
+}
+
+WeightMap SVD::ItemWeights(unsigned int item_id) {
+  return item_weights[item_id];
+}
+
 void SVD::CalcMetrics() {
   // Loops through the data and calculates averages used in training.
   AddTiming("Metrics init");
   cout << "Calculating global and user/item stats..." << endl;
-  unsigned int i = 0, f = 0;
-  float global_sum = 0;
+  unsigned int i = 0, j = 0, f = 0;
+  float global_sum = 0, weight = std::numeric_limits<float>::quiet_NaN();
+  WeightMapItr weights_itr;
 
   // set total weights count.
   total_weights = baseline_count + weights_count;
@@ -253,10 +322,6 @@ void SVD::CalcMetrics() {
       items[i].weights_sum = 0;
     }
   }
-  cout << "Calculating item offsets..." << endl;
-  for (i = 0; i < items.size(); i++) {
-    items[i].offset = items[i].regularized_avg - global_avg;
-  }
 
   // calculate user means.
   cout << "Calculating user means..." << endl;
@@ -267,47 +332,67 @@ void SVD::CalcMetrics() {
     }
     users[i].weights_avg = users[i].weights_sum / (1.0 * users[i].weights_count);
     users[i].regularized_avg = (global_avg * prior_weight + users[i].weights_sum) / (prior_weight * 1.0 + users[i].weights_count);
+  }
+
+  // calculate user and item offsets from regularized means.
+  cout << "Calculating user offsets..." << endl;
+  for (i = 0; i < users.size(); i++) {
+    for (weights_itr = user_weights[i].begin(); weights_itr != user_weights[i].end(); ++weights_itr) {
+      users[i].offset_sum += weights_itr->second - items[weights_itr->first].regularized_avg;
+    }
+    users[i].offset = users[i].offset_sum / users[i].weights_count;
     if (users[i].weights_count < min_weights) {
       // mark these users to not be counted when evaluating RMSE.
       users[i].weights_count = 0;
       users[i].weights_sum = 0;
     }
   }
-  cout << "Calculating user offsets..." << endl;
-  for (i = 0; i < users.size(); i++) {
-    users[i].offset = users[i].regularized_avg - global_avg;
-  }
 
-  cout << "Calculating user and item deviations..." << endl;
-  for (i = 0; i < total_weights; i++) {
-    if (users[weights[i].user_id].weights_count > 0) {
-      users[weights[i].user_id].deviation_sum += pow(weights[i].weight - users[weights[i].user_id].weights_avg, 2);
-    }
-    if (items[weights[i].item_id].weights_count > 0) {
-      items[weights[i].item_id].deviation_sum += pow(weights[i].weight - items[weights[i].item_id].weights_avg, 2);
-    }
-  }
-  for (i = 0; i < users.size(); i++) {
-    if (users[i].weights_count > 0) {
-      users[i].deviation = pow(users[i].deviation_sum / users[i].weights_count, 0.5);
-    }
-  }
-  for (i = 0; i < items.size(); i++) {
-    if (items[i].weights_count > 0) {
-      items[i].deviation = pow(items[i].deviation_sum / items[i].weights_count, 0.5);
-    }
-  }
+  // cout << "Calculating item offsets..." << endl;
+  // for (i = 0; i < items.size(); i++) {
+  //   if (items[i].weights_count == 0) {
+  //     continue;
+  //   }
+  //   for (j = 0; j < items.size(); j++) {
+  //     weights_itr = item_weights[i].find(j);
+  //     if (weights_itr != item_weights[i].end()) {
+  //       items[i].offset_sum += weights_itr->second - users[j].regularized_avg;
+  //     }
+  //   }
+  //   items[i].offset = items[i].offset_sum / items[i].weights_count;
+  // }
+
+  // cout << "Calculating user and item deviations..." << endl;
+  // for (i = 0; i < total_weights; i++) {
+  //   if (users[weights[i].user_id].weights_count > 0) {
+  //     users[weights[i].user_id].deviation_sum += pow(weights[i].weight - users[weights[i].user_id].weights_avg, 2);
+  //   }
+  //   if (items[weights[i].item_id].weights_count > 0) {
+  //     items[weights[i].item_id].deviation_sum += pow(weights[i].weight - items[weights[i].item_id].weights_avg, 2);
+  //   }
+  // }
+  // for (i = 0; i < users.size(); i++) {
+  //   if (users[i].weights_count > 0) {
+  //     users[i].deviation = pow(users[i].deviation_sum / users[i].weights_count, 0.5);
+  //   }
+  // }
+  // for (i = 0; i < items.size(); i++) {
+  //   if (items[i].weights_count > 0) {
+  //     items[i].deviation = pow(items[i].deviation_sum / items[i].weights_count, 0.5);
+  //   }
+  // }
   cout << "Finished calculating user/item stats." << endl;
   AddTiming("Metrics finish");
 }
 
 void SVD::NormalizeWeights(bool deviation) {
+  // centers all the training and baseline weights to have mean zero.
   AddTiming("Normalize init");
   cout << "Normalizing weights..." << endl;
   unsigned int i = 0;
   for (i = 0; i < total_weights; i++) {
     if (users[weights[i].user_id].weights_count > 0 && items[weights[i].item_id].weights_count > 0) {
-      weights[i].weight -= users[weights[i].user_id].offset + items[weights[i].item_id].offset;
+      weights[i].weight -= users[weights[i].user_id].offset + items[weights[i].item_id].regularized_avg;
       // if (deviation) {
       //   weights[i].weight /= users[weights[i].user_id].deviation * items[weights[i].item_id].deviation;
       // }
@@ -320,7 +405,7 @@ void SVD::NormalizeWeights(bool deviation) {
 void SVD::Train(bool calculate_metrics) {
   if (calculate_metrics) {
     CalcMetrics();
-    NormalizeWeights();
+    // NormalizeWeights();
   }
 
   // Iteratively train each feature on the entire dataset.
@@ -331,7 +416,7 @@ void SVD::Train(bool calculate_metrics) {
   bool runTests = test_weights.size() > 0;
 
   // TODO: uncomment this when auto-test partition is done.
-  // test_rmse = TestRMSE();
+  test_rmse = TestRMSE();
 
   for (feature = 0; feature < features_count; feature++) {
     feature_rmse_start = test_rmse;
@@ -348,11 +433,11 @@ void SVD::Train(bool calculate_metrics) {
 
         err = weights[i].weight - PredictWeight(item_id, user_id, feature, weights[i].cache, true);
 
-        // only count this as part of the train RMSE if over the given min weight count.
-        if (items[item_id].weights_count > 0 && users[user_id].weights_count > 0) {
+        // // only count this as part of the train RMSE if over the given min weight count.
+        // if (items[item_id].weights_count > 0 && users[user_id].weights_count > 0) {
           totalSquareError += err * err;
           selectedWeights++;
-        }
+        // }
 
         // Pull the old feature values from the cache.
         oldUserFeature = features_users[feature][user_id];
@@ -375,7 +460,7 @@ void SVD::Train(bool calculate_metrics) {
       feature_improvements.push_back(feature_rmse_start - test_rmse);
     }
 
-    // Cache the feature contributions so far so we don't have to recompute it for every feature.
+    // Cache the predictions so far so we don't have to recompute previous feature contributions for each new feature.
     for (i = 0; i < total_weights; i++) {
       weights[i].cache = PredictWeight(weights[i].item_id, weights[i].user_id, feature, weights[i].cache, false);
     }
@@ -390,10 +475,10 @@ inline float SVD::ClipWeight(float weight) {
 }
 
 inline float SVD::PredictWeight(unsigned int item_id, unsigned int user_id, unsigned int feature, float cache, bool trailing) {
-  // Predicts the weight for an item-user pairing.
+  // Predicts the weight for an item-user pairing, not including the item regularized-average and user offset.
   // Pulls the cached value of the contributions of all features up to this one if provided.
   // StartBenchmark("PredictWeight"");
-  float sum = (cache > 0) ? cache : global_avg + items[item_id].offset + users[user_id].offset;
+  float sum = (cache > 0) ? cache : items[item_id].regularized_avg + users[user_id].offset;
 
   // Add contribution of current feature.
   sum = ClipWeight(sum + features_items[feature][item_id] * features_users[feature][user_id]);
@@ -409,7 +494,7 @@ inline float SVD::PredictWeight(unsigned int item_id, unsigned int user_id, unsi
 float SVD::PredictWeight(unsigned int item_id, unsigned int user_id) {
   // Calculates the final weight prediction for an item-user pair.
   // Loops through all features, adding their contributions.
-  float sum = global_avg + items[item_id].offset + users[user_id].offset;
+  float sum = items[item_id].regularized_avg + users[user_id].offset;
   for (unsigned int f = 0; f < features_count; f++) {
     sum = ClipWeight(sum + features_items[f][item_id] * features_users[f][user_id]);
   }
@@ -438,7 +523,7 @@ float SVD::TestRMSE() {
   if (test_count > 0) {
     return sqrt(totalSquareError / numTests);
   } else {
-    return std::numeric_limits<double>::quiet_NaN();
+    return std::numeric_limits<float>::quiet_NaN();
   }
   // EndBenchmark("Test"");  
 }
@@ -489,4 +574,8 @@ vector<float> SVD::ItemFeatures(unsigned int item_id) {
     item_feature.push_back(features_items[f][item_ids[item_id]]);
   }
   return item_feature;
+}
+
+vector<float> SVD::FeatureImprovements() {
+  return feature_improvements;
 }
