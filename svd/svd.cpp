@@ -261,22 +261,20 @@ void SVD::LoadCSVTest(std::string training_file) {
 
 void SVD::PartitionWeights(unsigned int test_percent) {
   // splits the currently-loaded training weights into training and test sets
-  // test_percent determines the final size of the test set.
+  // test_percent determines the final size of the test set, relative to the total number of weights.
   AddTiming("Partition init");
   cout << "Partitioning training set into training and validation sets..." << endl;
-  unsigned int training_weights = baseline_count + weights_count, i = 0;
+  unsigned int training_weights = baseline_count + weights_count, i = 0, all_weights = baseline_count + weights_count + test_count;
+  unsigned int final_test_weights = (int) (all_weights * test_percent / 100);
 
-  while ((float) (test_count) / total_weights * 100 < test_percent) {
-    // select a random row from the training set.
-    std::default_random_engine generator;
-    std::uniform_int_distribution<int> distribution(0, training_weights - 1);
-    i = distribution(generator);
-
-    // add it to the test set and remove it from the training set.
+  std::random_shuffle(weights.begin(), weights.end());
+  for (int i = 0; i < final_test_weights; ++i) {
     LoadTestRow(weights[i].user_id, weights[i].item_id, weights[i].weight);
     DeleteWeight(weights[i].user_id, weights[i].item_id);
     training_weights--;
+    cout << "Test weights: " << test_count << " | Training weights: " << training_weights << endl;
   }
+
   cout << "Partition finished. " << test_count << " weights now in validation set." << endl;
   AddTiming("Partition finish");
 }
@@ -411,7 +409,7 @@ void SVD::Train(bool calculate_metrics) {
   // Iteratively train each feature on the entire dataset.
   AddTiming("Features init");
   cout << "Calculating SVD features..." << endl;
-  unsigned int feature = 0, epoch = 0, total_epochs = 0, user_id = 0, item_id = 0, i = 0, selectedWeights = 0;
+  unsigned int feature = 0, epoch = 0, total_epochs = 0, user_id = 0, item_id = 0, i = 0;
   float err = 0, oldUserFeature = 0, oldItemFeature = 0, totalSquareError = 0, lastRmse = 0, rmse = 2.0, test_rmse = 2.0, feature_rmse_start = 0;
   bool runTests = test_weights.size() > 0;
 
@@ -426,20 +424,14 @@ void SVD::Train(bool calculate_metrics) {
       // StartBenchmark("Epoch");
       totalSquareError = 0;
       lastRmse = rmse;
-      selectedWeights = 0;
       for (i = 0; i < total_weights; i++) {
         item_id = weights[i].item_id;
         user_id = weights[i].user_id;
 
         err = weights[i].weight - PredictWeight(item_id, user_id, feature, weights[i].cache, true);
+        totalSquareError += err * err;
 
-        // // only count this as part of the train RMSE if over the given min weight count.
-        // if (items[item_id].weights_count > 0 && users[user_id].weights_count > 0) {
-          totalSquareError += err * err;
-          selectedWeights++;
-        // }
-
-        // Pull the old feature values from the cache.
+        // Pull the current feature values.
         oldUserFeature = features_users[feature][user_id];
         oldItemFeature = features_items[feature][item_id];
 
@@ -447,7 +439,7 @@ void SVD::Train(bool calculate_metrics) {
         features_users[feature][user_id] += learn_rate * (err * oldItemFeature - tikhonov * oldUserFeature);
         features_items[feature][item_id] += learn_rate * (err * oldUserFeature - tikhonov * oldItemFeature);
       }
-      rmse = sqrt(totalSquareError / selectedWeights);
+      rmse = sqrt(totalSquareError / total_weights);
       cout << "Feature: " << feature << " | Epoch: " << total_epochs + epoch << " | Last RMSE: " << lastRmse << " | RMSE: " << rmse << " | Improvement: " << (lastRmse - rmse) << endl;
       // EndBenchmark("Epoch"");
     }
